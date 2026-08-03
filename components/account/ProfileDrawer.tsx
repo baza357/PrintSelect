@@ -1,374 +1,255 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { X } from "lucide-react";
+import type { User } from "@supabase/supabase-js";
+import {
+  FolderOpen,
+  Heart,
+  LogOut,
+  PackageCheck,
+  ShoppingBag,
+  UserRound,
+  X,
+} from "lucide-react";
 import { supabase } from "@/lib/supabase/client";
 
 interface ProfileDrawerProps {
   setDrawer: (value: null) => void;
 }
 
+interface Profile {
+  id: string;
+  name: string | null;
+  phone: string | null;
+  email: string | null;
+  created_at: string | null;
+}
+
+type AuthMode = "login" | "register";
+
 export function ProfileDrawer({
   setDrawer,
 }: ProfileDrawerProps) {
+  const [mode, setMode] = useState<AuthMode>("login");
 
-  const [mode, setMode] = useState<"login" | "register">("login");
-
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<User | null>(null);
+  const [profile, setProfile] = useState<Profile | null>(null);
 
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
-
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
   const [message, setMessage] = useState("");
-  const [loading, setLoading] = useState(false);
-
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let mounted = true;
 
-    async function checkUser() {
-
+    async function loadCurrentUser() {
       const {
-        data
+        data: { user: currentUser },
+        error,
       } = await supabase.auth.getUser();
 
-      setUser(data.user);
+      if (!mounted) {
+        return;
+      }
 
+      if (error) {
+        setMessage(error.message);
+      }
+
+      setUser(currentUser);
+
+      if (currentUser) {
+        await loadProfile(currentUser.id);
+      }
+
+      if (mounted) {
+        setLoading(false);
+      }
     }
 
-    checkUser();
-
+    loadCurrentUser();
 
     const {
-      data: listener
-    } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      const currentUser = session?.user ?? null;
 
-        setUser(session?.user ?? null);
+      setUser(currentUser);
+      setMessage("");
 
+      if (currentUser) {
+        void loadProfile(currentUser.id);
+      } else {
+        setProfile(null);
       }
-    );
-
+    });
 
     return () => {
-
-      listener.subscription.unsubscribe();
-
+      mounted = false;
+      subscription.unsubscribe();
     };
-
   }, []);
 
+  async function loadProfile(userId: string) {
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("id, name, phone, email, created_at")
+      .eq("id", userId)
+      .maybeSingle();
 
+    if (error) {
+      setProfile(null);
+      setMessage(`Не удалось загрузить профиль: ${error.message}`);
+      return;
+    }
+
+    setProfile(data);
+  }
 
   async function register() {
+    const cleanEmail = email.trim();
+    const cleanName = name.trim();
+    const cleanPhone = phone.trim();
+
+    if (!cleanName) {
+      setMessage("Введите имя.");
+      return;
+    }
+
+    if (!cleanEmail) {
+      setMessage("Введите email.");
+      return;
+    }
+
+    if (password.length < 8) {
+      setMessage("Пароль должен содержать минимум 8 символов.");
+      return;
+    }
 
     setLoading(true);
     setMessage("");
 
-    const {
-      error
-    } = await supabase.auth.signUp({
-
-      email,
+    const { error } = await supabase.auth.signUp({
+      email: cleanEmail,
       password,
-
       options: {
-
         data: {
-          name,
-          phone,
+          name: cleanName,
+          phone: cleanPhone,
         },
-
+        emailRedirectTo:
+          typeof window !== "undefined"
+            ? window.location.origin
+            : undefined,
       },
-
     });
-
 
     setLoading(false);
 
-
     if (error) {
-
       setMessage(error.message);
       return;
-
     }
-
 
     setMessage(
-      "Письмо подтверждения отправлено на почту"
+      "Письмо подтверждения отправлено. Откройте его и подтвердите регистрацию.",
     );
-
   }
 
-
-
   async function login() {
+    const cleanEmail = email.trim();
+
+    if (!cleanEmail || !password) {
+      setMessage("Введите email и пароль.");
+      return;
+    }
 
     setLoading(true);
     setMessage("");
 
-
-    const {
-      error
-    } = await supabase.auth.signInWithPassword({
-
-      email,
+    const { error } = await supabase.auth.signInWithPassword({
+      email: cleanEmail,
       password,
-
     });
-
 
     setLoading(false);
 
-
     if (error) {
-
       setMessage(error.message);
       return;
-
     }
 
-
-    setMessage("Вы успешно вошли");
-
+    setMessage("Вход выполнен.");
   }
-
-
 
   async function logout() {
+    setLoading(true);
+    setMessage("");
 
-    await supabase.auth.signOut();
+    const { error } = await supabase.auth.signOut();
+
+    setLoading(false);
+
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
 
     setUser(null);
-
+    setProfile(null);
   }
 
+  const displayName =
+    profile?.name?.trim() ||
+    user?.user_metadata?.name ||
+    "Пользователь PrintSelect";
 
+  const displayEmail =
+    profile?.email?.trim() || user?.email || "Email не указан";
+
+  const displayPhone =
+    profile?.phone?.trim() ||
+    user?.user_metadata?.phone ||
+    "Телефон не указан";
 
   return (
-
     <>
-
       <div
         className="overlay"
         onClick={() => setDrawer(null)}
       />
 
-
       <aside className="drawer">
-
-
         <button
           className="close"
+          type="button"
+          aria-label="Закрыть личный кабинет"
           onClick={() => setDrawer(null)}
         >
           <X />
         </button>
 
+        <p>Ваше пространство</p>
+        <h2>Личный кабинет</h2>
 
-
-        <p>
-          Ваше пространство
-        </p>
-
-
-
-        <h2>
-          Личный кабинет
-        </h2>
-
-
-
-        {user ? (
-
+        {loading && !user ? (
+          <div className="empty">
+            <UserRound />
+            <strong>Загружаем аккаунт</strong>
+            <span>Подождите несколько секунд.</span>
+          </div>
+        ) : user ? (
           <>
-
-            <h3>
-              Вы вошли
-            </h3>
-
-
-            <span>
-              {user.email}
-            </span>
-
-
-            <button
-              className="primary wide"
-              onClick={logout}
-            >
-              Выйти из аккаунта
-            </button>
-
-
-          </>
-
-
-        ) : (
-
-          <>
-
-
-            <h3>
-              {mode === "login"
-                ? "Вход в аккаунт"
-                : "Создайте аккаунт"
-              }
-            </h3>
-
-
-
-            <span>
-              Сохраняйте проекты, следите за заказами
-              и создавайте новые дизайны.
-            </span>
-
-
-
-            <form
-              onSubmit={(e)=>{
-
-                e.preventDefault();
-
-                mode === "login"
-                  ? login()
-                  : register();
-
-              }}
-            >
-
-
-              {mode === "register" && (
-
-                <>
-
-                  <label>
-                    Имя
-
-                    <input
-                      value={name}
-                      onChange={(e)=>
-                        setName(e.target.value)
-                      }
-                      placeholder="Как к вам обращаться"
-                    />
-
-                  </label>
-
-
-
-                  <label>
-                    Телефон
-
-                    <input
-                      value={phone}
-                      onChange={(e)=>
-                        setPhone(e.target.value)
-                      }
-                      placeholder="+7 (___) ___-__-__"
-                    />
-
-                  </label>
-
-                </>
-
-              )}
-
-
-
-              <label>
-                Email
-
-                <input
-                  value={email}
-                  onChange={(e)=>
-                    setEmail(e.target.value)
-                  }
-                  type="email"
-                  placeholder="name@example.ru"
-                />
-
-              </label>
-
-
-
-              <label>
-                Пароль
-
-                <input
-                  value={password}
-                  onChange={(e)=>
-                    setPassword(e.target.value)
-                  }
-                  type="password"
-                  placeholder="Минимум 8 символов"
-                />
-
-              </label>
-
-
-
-              <button
-                className="primary wide"
-                type="submit"
-                disabled={loading}
-              >
-
-                {loading
-                  ? "Подождите..."
-                  : mode === "login"
-                    ? "Войти"
-                    : "Создать аккаунт"
-                }
-
-              </button>
-
-
-            </form>
-
-
-
-            <button
-              className="textButton"
-              onClick={()=>
-                setMode(
-                  mode === "login"
-                    ? "register"
-                    : "login"
-                )
-              }
-            >
-
-              {mode === "login"
-                ? "Нет аккаунта? Регистрация"
-                : "Уже есть аккаунт? Войти"
-              }
-
-            </button>
-
-
-
-            {message && (
-
-              <p>
-                {message}
-              </p>
-
-            )}
-
-
-          </>
-
-        )}
-
-
-      </aside>
-
-    </>
-
-  );
-
-}
+            <div className="favoriteCard">
+              <b>
+                {displayName
+                  .slice(0, 2)
+                  .toUpperCase()}
+              </b>
+
+              <div>
+                <strong>{displayName}</strong>
