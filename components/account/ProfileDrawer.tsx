@@ -43,57 +43,6 @@ export function ProfileDrawer({
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    let mounted = true;
-
-    async function loadCurrentUser() {
-      const {
-        data: { user: currentUser },
-        error,
-      } = await supabase.auth.getUser();
-
-      if (!mounted) {
-        return;
-      }
-
-      if (error) {
-        setMessage(error.message);
-      }
-
-      setUser(currentUser);
-
-      if (currentUser) {
-        await loadProfile(currentUser.id);
-      }
-
-      if (mounted) {
-        setLoading(false);
-      }
-    }
-
-    loadCurrentUser();
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      const currentUser = session?.user ?? null;
-
-      setUser(currentUser);
-      setMessage("");
-
-      if (currentUser) {
-        void loadProfile(currentUser.id);
-      } else {
-        setProfile(null);
-      }
-    });
-
-    return () => {
-      mounted = false;
-      subscription.unsubscribe();
-    };
-  }, []);
-
   async function loadProfile(userId: string) {
     const { data, error } = await supabase
       .from("profiles")
@@ -110,10 +59,63 @@ export function ProfileDrawer({
     setProfile(data);
   }
 
+  useEffect(() => {
+    let active = true;
+
+    async function loadCurrentUser() {
+      const {
+        data: { user: currentUser },
+        error,
+      } = await supabase.auth.getUser();
+
+      if (!active) {
+        return;
+      }
+
+      if (error) {
+        setMessage(error.message);
+      }
+
+      setUser(currentUser);
+
+      if (currentUser) {
+        await loadProfile(currentUser.id);
+      }
+
+      if (active) {
+        setLoading(false);
+      }
+    }
+
+    void loadCurrentUser();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      const currentUser = session?.user ?? null;
+
+      setUser(currentUser);
+      setMessage("");
+
+      if (currentUser) {
+        void loadProfile(currentUser.id);
+      } else {
+        setProfile(null);
+      }
+
+      setLoading(false);
+    });
+
+    return () => {
+      active = false;
+      subscription.unsubscribe();
+    };
+  }, []);
+
   async function register() {
-    const cleanEmail = email.trim();
     const cleanName = name.trim();
     const cleanPhone = phone.trim();
+    const cleanEmail = email.trim();
 
     if (!cleanName) {
       setMessage("Введите имя.");
@@ -141,10 +143,7 @@ export function ProfileDrawer({
           name: cleanName,
           phone: cleanPhone,
         },
-        emailRedirectTo:
-          typeof window !== "undefined"
-            ? window.location.origin
-            : undefined,
+        emailRedirectTo: window.location.origin,
       },
     });
 
@@ -156,7 +155,7 @@ export function ProfileDrawer({
     }
 
     setMessage(
-      "Письмо подтверждения отправлено. Откройте его и подтвердите регистрацию.",
+      "Письмо подтверждения отправлено. Откройте почту и подтвердите регистрацию.",
     );
   }
 
@@ -201,6 +200,8 @@ export function ProfileDrawer({
 
     setUser(null);
     setProfile(null);
+    setEmail("");
+    setPassword("");
   }
 
   const displayName =
@@ -209,7 +210,9 @@ export function ProfileDrawer({
     "Пользователь PrintSelect";
 
   const displayEmail =
-    profile?.email?.trim() || user?.email || "Email не указан";
+    profile?.email?.trim() ||
+    user?.email ||
+    "Email не указан";
 
   const displayPhone =
     profile?.phone?.trim() ||
@@ -234,22 +237,203 @@ export function ProfileDrawer({
         </button>
 
         <p>Ваше пространство</p>
+
         <h2>Личный кабинет</h2>
 
         {loading && !user ? (
           <div className="empty">
             <UserRound />
+
             <strong>Загружаем аккаунт</strong>
+
             <span>Подождите несколько секунд.</span>
           </div>
         ) : user ? (
           <>
             <div className="favoriteCard">
-              <b>
-                {displayName
-                  .slice(0, 2)
-                  .toUpperCase()}
-              </b>
+              <b>{displayName.slice(0, 2).toUpperCase()}</b>
 
               <div>
                 <strong>{displayName}</strong>
+
+                <span>{displayEmail}</span>
+
+                <em>{displayPhone}</em>
+              </div>
+            </div>
+
+            <div className="optionList">
+              <button type="button">
+                <FolderOpen />
+                <span>Мои проекты</span>
+              </button>
+
+              <button type="button">
+                <ShoppingBag />
+                <span>Корзина</span>
+              </button>
+
+              <button type="button">
+                <Heart />
+                <span>Избранное</span>
+              </button>
+
+              <button type="button">
+                <PackageCheck />
+                <span>Мои заказы</span>
+              </button>
+            </div>
+
+            {message && (
+              <p role="status">
+                {message}
+              </p>
+            )}
+
+            <button
+              className="outline wide"
+              type="button"
+              disabled={loading}
+              onClick={() => void logout()}
+            >
+              <LogOut />
+
+              <span>
+                {loading
+                  ? "Выходим..."
+                  : "Выйти из аккаунта"}
+              </span>
+            </button>
+          </>
+        ) : (
+          <>
+            <h3>
+              {mode === "login"
+                ? "Вход в аккаунт"
+                : "Создайте аккаунт"}
+            </h3>
+
+            <span>
+              Сохраняйте проекты, следите за заказами и
+              продолжайте редактирование с любого устройства.
+            </span>
+
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+
+                if (mode === "login") {
+                  void login();
+                } else {
+                  void register();
+                }
+              }}
+            >
+              {mode === "register" && (
+                <>
+                  <label>
+                    Имя
+
+                    <input
+                      value={name}
+                      onChange={(event) =>
+                        setName(event.target.value)
+                      }
+                      placeholder="Как к вам обращаться"
+                      autoComplete="name"
+                      required
+                    />
+                  </label>
+
+                  <label>
+                    Телефон
+
+                    <input
+                      value={phone}
+                      onChange={(event) =>
+                        setPhone(event.target.value)
+                      }
+                      placeholder="+7 (___) ___-__-__"
+                      autoComplete="tel"
+                    />
+                  </label>
+                </>
+              )}
+
+              <label>
+                Email
+
+                <input
+                  value={email}
+                  onChange={(event) =>
+                    setEmail(event.target.value)
+                  }
+                  type="email"
+                  placeholder="name@example.ru"
+                  autoComplete="email"
+                  required
+                />
+              </label>
+
+              <label>
+                Пароль
+
+                <input
+                  value={password}
+                  onChange={(event) =>
+                    setPassword(event.target.value)
+                  }
+                  type="password"
+                  placeholder="Минимум 8 символов"
+                  autoComplete={
+                    mode === "login"
+                      ? "current-password"
+                      : "new-password"
+                  }
+                  minLength={8}
+                  required
+                />
+              </label>
+
+              <button
+                className="primary wide"
+                type="submit"
+                disabled={loading}
+              >
+                {loading
+                  ? "Подождите..."
+                  : mode === "login"
+                    ? "Войти"
+                    : "Создать аккаунт"}
+              </button>
+            </form>
+
+            <button
+              className="textButton"
+              type="button"
+              onClick={() => {
+                setMode(
+                  mode === "login"
+                    ? "register"
+                    : "login",
+                );
+
+                setMessage("");
+              }}
+            >
+              {mode === "login"
+                ? "Нет аккаунта? Зарегистрироваться"
+                : "Уже есть аккаунт? Войти"}
+            </button>
+
+            {message && (
+              <p role="status">
+                {message}
+              </p>
+            )}
+          </>
+        )}
+      </aside>
+    </>
+  );
+}
